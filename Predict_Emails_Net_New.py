@@ -95,6 +95,38 @@ print(df1)
 
 
 
+
+
+
+
+
+
+import pandas as pd
+
+bounced_emails = pd.read_csv(r"C:\Users\wausa\Work\Data\ThinkCyber_Bounced_Emails.csv")
+
+bounced_emails['Email'] = bounced_emails['Email'].str.strip()
+
+contacts = pd.read_csv(r"C:\Users\wausa\Work\Data\SF_Data\Contacts_All_Data.csv", encoding='ISO-8859-1')
+
+bounced_emails = pd.merge(bounced_emails, contacts[['CASESAFE_CONTACT_ID__C', 'FIRSTNAME', 'LASTNAME', 'ACCOUNT_WEBSITE__C', 'EMAIL']],
+                          left_on = 'Email', right_on = 'EMAIL').drop('EMAIL', axis = 1)
+
+
+
+bounced_emails_test = bounced_emails[['FIRSTNAME', 'LASTNAME', 'ACCOUNT_WEBSITE__C']]
+
+bounced_emails_test = bounced_emails_test.rename(columns = {'FIRSTNAME' : 'First Name', 'LASTNAME' : 'Last Name', 'ACCOUNT_WEBSITE__C' : 'Website'})
+
+results = read_file(bounced_emails_test)
+
+results.to_csv('think_cyber.csv')
+
+verify_email('mikejackson@express-gifts.co.uk')
+
+
+
+
 # import os
 # os.chdir(r'C:\Users\wausa\Work\DataScienceTesting\Hayne_Task_10_22')
 # df1.to_csv('final_hayne_contacts.csv')
