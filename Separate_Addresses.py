@@ -4,6 +4,7 @@ import glob
 import os
 pd.set_option('display.expand_frame_repr', False)
 
+# data imports for validation
 # country codes -> want to compare alpha-2 code
 path_cc = r"C:\Users\wausa\Work\Data\Countries_And_Codes.csv"
 Country_Codes = pd.read_csv(path_cc)
@@ -17,29 +18,12 @@ path_cities = r"C:\Users\wausa\Work\Data\UK_city_town_info_ONS.csv"
 uk_cities = pd.read_csv(path_cities) # lots of dupes i.e. Little London
 uk_cities = uk_cities.drop_duplicates('Town/City')
 
-
-
-
-
-
 # test AL split -> need to import glob in order to combine the multiple csv files
 path = r"C:\Users\wausa\Work\Data\AL_Build_Data"
 all_files = glob.glob(os.path.join(path, "Account all global locations build*.csv"))
 df_from_each_file = (pd.read_csv(f, low_memory=False) for f in all_files) # get individual dfs as truncated
 testdf = pd.concat(df_from_each_file, ignore_index=True)
 
-
-##################### Need to consider all the different formats of the address as they are not all 5/6 pieces long
-# 4     2877 / 5892
-# 5     1521
-# 6      540
-# 3      354
-# 2      250
-# 7      175
-# 1       94
-# 8       43
-# 9       20
-# 10      10 ################# could do one for each address -> or at least fill most common 4, 5, 6, 3
 
 # Notes -> Singapore has structure -> street + country/postcode
 # if state/country is in 'City' column, remove and add to 'Area' or something similar
@@ -54,7 +38,7 @@ def parse_address(df):
     else:
         return print('Error: No \'Address\' Column')
 
-    df = df.assign(Street='', City='', Area='', Post_Code='', Country='')
+    df = df.assign(Street='', City='', Area='', State_County='', Post_Code='', Country='')
 
 
     # formatting
@@ -93,7 +77,10 @@ def parse_address(df):
     # for length == 2 -> 2 components
     df.loc[(df['Address'].str.split(',').str.len() == 2), 'City'] = df['Address'].str.split(',').str[0] # make city first line -> some are states
 
-    # for len = 1
+    # for len > 6
+    df.loc[(df['Address'].str.split(',').str.len() > 5), 'Street'] = df['Address'].str.split(',').str[0:5]  # make country last line if length > 1
+
+
 
     # remove whitespaces from all columns
     df[df.columns] = df[df.columns].apply(lambda x: x.str.strip())
@@ -124,10 +111,34 @@ def parse_address(df):
     # df.loc[(df['Country Full'] != 'Australia'), 'Post_Code'] = \
     #     df['Post_Code'].str.replace(r'([A-Za-z]{4,}\s)', '')
 
-    # Aus postcodes include region/state *** could apply to other countries***
+
+    # Aus postcodes/state include region/state *** could apply to other countries***
     df.loc[(df['Country Full'] == 'Australia'), 'Post_Code'] = \
         df['Address'].str.extract(r'(\b[\w ]+\b\d{4}\b)', expand = False)
 
+    # then get state from this
+    df.loc[(df['Country Full'] == 'Australia'), 'State_County'] = \
+        df['Post_Code'].str.extract(r'(\b[\w ]+?(?= \d))', expand = False)
+    # just look for two letters
+    df.loc[(df['Country Full'] == 'Australia') & (df['State_County'].isna()), 'State_County'] = df['Address'].str.extract(r'(\b[A-Z]{2}\b)', expand=False)
+    df.loc[(df['Country Full'] == 'Australia') & (df['State_County'].isna()), 'State_County'] = df['Address'].str.extract(r'(\b[A-Z]{3}\b)', expand=False)
+
+    # reset postcode
+    df.loc[(df['Country Full'] == 'Australia'), 'Post_Code'] = \
+        df['Address'].str.extract(r'(\b\d{4}\b)', expand = False)
+
+    # Change 'WA' to 'Western Australia', 'VIC' to 'Victoria' etc...
+    df.loc[(df['Country Full'] == 'Australia') & (df['State_County'].str.lower() == 'wa'), 'State_County'] = 'Western Australia'
+    df.loc[(df['Country Full'] == 'Australia') & (df['State_County'].str.lower() == 'vic'), 'State_County'] = 'Victoria'
+    df.loc[(df['Country Full'] == 'Australia') & (df['State_County'].str.lower() == 'vi'), 'State_County'] = 'Victoria'
+    df.loc[(df['Country Full'] == 'Australia') & (df['State_County'].str.lower() == 'nsw'), 'State_County'] = 'New South Wales'
+    df.loc[(df['Country Full'] == 'Australia') & (df['State_County'].str.lower() == 'ns'), 'State_County'] = 'New South Wales'
+    df.loc[(df['Country Full'] == 'Australia') & (df['State_County'].str.lower() == 'qld'), 'State_County'] = 'Queensland'
+    df.loc[(df['Country Full'] == 'Australia') & (df['State_County'].str.lower() == 'ql'), 'State_County'] = 'Queensland'
+    df.loc[(df['Country Full'] == 'Australia') & (df['State_County'].str.lower() == 'nt'), 'State_County'] = 'Northern Territory'
+    df.loc[(df['Country Full'] == 'Australia') & (df['State_County'].str.lower() == 'sa'), 'State_County'] = 'South Australia'
+    df.loc[(df['Country Full'] == 'Australia') & (df['State_County'].str.lower() == 'tas'), 'State_County'] = 'Tasmania'
+    df.loc[(df['Country Full'] == 'Australia') & (df['State_County'].str.lower() == 'ts'), 'State_County'] = 'Tasmania'
 
     ############################################################################# UK enrichment -> postcode/city/country
     # replacing 'United Kingdom' with the specific countries *** could do same for counties
@@ -143,6 +154,7 @@ def parse_address(df):
     uk_postcodes['Post_Code_2'] = uk_postcodes['Postcode'].str.replace(' ', '')  # normalise to no space
     df = pd.merge(df, uk_postcodes[['Post_Code_2', 'County', 'Region', 'Country', 'Latitude', 'Longitude']], how='left', on='Post_Code_2')  # merge on postcode
     df.loc[(df['Country Full'] == 'United Kingdom') & (df['Country_y'].notna()), 'Country Full'] = df['Country_y']  # now replace UK with country
+    df.loc[(df['Region'].notna()), 'Area'] = df['Region'] # *** get region from postcode match -> column name is 'Region'
     df = df.drop(['Post_Code_2', 'County', 'Region', 'Country_y', 'Latitude', 'Longitude'], axis=1)  # drop additional columns added by merge
     df = df.rename(columns={'Country_x': 'Country'})  # rename column changed by merge
 
@@ -154,6 +166,9 @@ def parse_address(df):
 
     ####################################################################################################################
 
+    # change 'Is HQ Y/N -> True/False
+    df.loc[(df['Is HQ? Y or N'] == 'Y'), 'Is HQ? Y or N'] = 'TRUE'
+    df.loc[(df['Is HQ? Y or N'] == 'N'), 'Is HQ? Y or N'] = 'FALSE'
 
     return df
 
@@ -161,18 +176,18 @@ def parse_address(df):
  # then take the rest as street
  # some postcodes have no space so need to incorporate that
 
- # want to split UK into Eng/Scot/Wales
+ # could change all London in area to greater London
 
 df1 = parse_address(testdf)
 
 
-
 df1.loc[df1['Country Full'] == 'Australia']
-df1['Post_Code'].isna().value_counts()
 
 
 
 
+
+df1.to_csv('AL_split_addresses_07_12_22.csv')
 
 
 
@@ -273,8 +288,11 @@ df1.loc[df1['Country Full'] == 'United Kingdom']
 
 df1['Address'].head()
 
+df1['CaseSafe Account ID'].nunique() # 9703 accounts
 
-df1.loc[df1['Country Full'] == 'United States', 'CaseSafe Account ID'].nunique()
+df1.loc[(df1['Is HQ? Y or N'] == 'Y') & (df1['Country Full'] == 'Australia'), 'CaseSafe Account ID'].nunique() # 9703 accounts
+
+df1.loc[df1['Country Full'] == 'England', 'CaseSafe Account ID'].nunique() # 1538 US accounts
 
 df1['CaseSafe Account ID (Ignore)'].nunique()
 
@@ -288,34 +306,6 @@ df1['CaseSafe Account ID (Ignore)'].nunique()
 df1['Address 1'].str.contains(uk_countries[0])
 
 # country check
-
-
-
-
-df1.loc[(df1['Country Full'] == 'United Kingdom')] # 1686 still left
-
-
-
-
-df1.loc[(df1['Country Full'] == 'United Kingdom') &
-        (df1['Address 1'].str.extract('(England)') == 'England')]
-
-
-
-df1['Address 1'].str.extract('(England)').value_counts()
-
-
-
-
-
-
-uk_cities = pd.read_csv(r"C:\Users\wausa\Work\Data\UK_city_town_info_ONS.csv")
-
-uk_cities_list = uk_cities['Town/City'].to_list()
-
-cities_query = '|'.join(uk_cities_list)
-
-df1['Address 1'].str.findall(r'(\b{}\b)'.format(cities_query))[0:50]
 
 
 
